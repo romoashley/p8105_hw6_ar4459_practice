@@ -1,0 +1,77 @@
+---
+title: "p8105_hw6_ar4459_practice"
+author: "ASHLEY ROMO"
+date: "2023-11-30"
+output: html_document
+---
+
+load key packages
+```{r}
+library(tidyverse)
+library(p8105.datasets)
+library(modelr)
+
+set.seed(1)
+knitr::opts_chunk$set(
+	echo = TRUE,
+	warning = FALSE,
+  fig.width = 6,
+  fig.asp = .6,
+  out.width = "90%"
+)
+
+theme_set(theme_minimal() + theme(legend.position = "bottom"))
+
+options(
+  ggplot2.continuous.colour = "viridis",
+  ggplot2.continuous.fill = "viridis"
+)
+
+scale_colour_discrete = scale_colour_viridis_d
+scale_fill_discrete = scale_fill_viridis_d
+```
+
+### Problem 2
+```{r}
+weather_df = 
+  rnoaa::meteo_pull_monitors(
+    c("USW00094728"),
+    var = c("PRCP", "TMIN", "TMAX"), 
+    date_min = "2022-01-01",
+    date_max = "2022-12-31") |>
+  mutate(
+    name = recode(id, USW00094728 = "CentralPark_NY"),
+    tmin = tmin / 10,
+    tmax = tmax / 10) |>
+  select(name, id, everything())
+```
+
+
+```{r}
+# bootstrap function 
+boot_sample = function(df) {
+  
+  sample_frac(df, replace = TRUE)
+}
+
+# apply bootstrap
+boot_results =
+  tibble(strap_number = 1:50) |> 
+  mutate(
+    strap_sample = map(strap_number, \(i) boot_sample(weather_df)),
+    models = map(strap_sample, \(df) lm(tmax ~ tmin + prcp, data = df)),
+    results = map(models, broom::tidy),
+    r_square = map(models, broom::glance)) |> 
+  select(strap_number, results, r_square) |> 
+  unnest(results) |> 
+  select(term, estimate, r_square) |> 
+  unnest(r_square) |> 
+  select(term, estimate, r.squared) 
+
+#how to I get log(intercept*tmin) --> pivot wider? 
+#  mutate(
+#    log_betas = log(intercept*tmin))
+
+```
+
+### Problem 3
