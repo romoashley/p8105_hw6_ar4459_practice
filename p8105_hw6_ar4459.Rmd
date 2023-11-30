@@ -72,6 +72,56 @@ boot_results =
 #  mutate(
 #    log_betas = log(intercept*tmin))
 
+
+#95% Confidence Interval
+#boot_results |> 
+#  group_by(term) |> 
+#  summarize(
+#   ci_lower_est = quantile(estimate, 0.025),
+#   ci_upper_est = quantile(estimate, 0.025),
+#    ci_lower_r = quantile(r.square, 0.025),
+#    ci_upper_r = quantile(r.square, 0.025))
+
+
 ```
 
 ### Problem 3
+
+```{r}
+#how do I see if the variables are chr or num ?
+#data cleaning
+bw_data = 
+  read_csv("data/birthweight.csv")
+
+#linear regression
+linear_mod = lm(bwt ~ delwt, data = bw_data)
+
+#adding predictions
+bw_data  |> 
+  modelr::add_predictions(linear_mod) |> 
+  ggplot(aes(x = delwt, y = bwt)) + 
+  geom_point() + 
+  geom_line(aes(y = pred))
+
+#adding residuals
+bw_data |> 
+  modelr::add_residuals(linear_mod) |> 
+  ggplot(aes(x = delwt, y = bwt)) + 
+  geom_point() + 
+  geom_line(aes(y = resid))
+```
+
+Compare model to two other ones
+```{r}
+#model 1
+model_one = lm(bwt ~ blength + gaweeks, data = bw_data)
+
+#model 2
+model_two = lm(bwt ~ bhead + blength + babysex + bhead*blength + bhead*babysex + blength*babysex + bhead*blength*babysex, data = bw_data)
+```
+
+Cross Validation 
+```{r}
+
+```
+
