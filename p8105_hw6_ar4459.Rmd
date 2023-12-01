@@ -46,64 +46,119 @@ weather_df =
   select(name, id, everything())
 ```
 
-
+First, I created a bootstrap function. 
 ```{r}
 # bootstrap function 
 boot_sample = function(df) {
   
   sample_frac(df, replace = TRUE)
 }
+```
 
-# apply bootstrap
-boot_results =
+Next, I apply the bootsrap function and use broom::glance to calculate the r square value.
+```{r}
+# apply bootstrap for r square
+boot_results_r =
   tibble(strap_number = 1:50) |> 
   mutate(
     strap_sample = map(strap_number, \(i) boot_sample(weather_df)),
     models = map(strap_sample, \(df) lm(tmax ~ tmin + prcp, data = df)),
-    results = map(models, broom::tidy),
-    r_square = map(models, broom::glance)) |> 
-  select(strap_number, results, r_square) |> 
-  unnest(results) |> 
-  select(term, estimate, r_square) |> 
-  unnest(r_square) |> 
-  select(term, estimate, r.squared) 
-
-#how to I get log(intercept*tmin) --> pivot wider? 
-#  mutate(
-#    log_betas = log(intercept*tmin))
-
-
-#95% Confidence Interval
-#boot_results |> 
-#  group_by(term) |> 
-#  summarize(
-#   ci_lower_est = quantile(estimate, 0.025),
-#   ci_upper_est = quantile(estimate, 0.025),
-#    ci_lower_r = quantile(r.square, 0.025),
-#    ci_upper_r = quantile(r.square, 0.025))
-
+    results = map(models, broom::glance))|> 
+  select(-strap_sample, -models) |> 
+    unnest(results) |> 
+   janitor::clean_names() 
+  
+#r.square plot
+boot_results_r |> 
+  ggplot(aes(x = r_squared)) +
+  geom_density() +
+  labs(
+    x = "R Squared",
+    y = "Density",
+    title = "Distribution of R Squared"
+  )
 
 ```
+The r square plot is unimodal. The max r squared is `r max(boot_results_r |> pull(r_squared))`.
+
+
+Now, I apply the bootstrap function to the dataframe and use the broom::tidy function to calculate the beta estimates. I use pivot_wider to isolate the values for tmin and prcp and also rename tmin to beta1 and prcp to beta2. 
+```{r}
+# apply bootstrap for log(b1*b2)
+boot_results_beta =
+  tibble(strap_number = 1:50) |> 
+  mutate(
+    strap_sample = map(strap_number, \(i) boot_sample(weather_df)),
+    models = map(strap_sample, \(df) lm(tmax ~ tmin + prcp, data = df)),
+    results = map(models, broom::tidy))|> 
+    unnest(results) |> 
+  janitor::clean_names() |> 
+  select(strap_number, term, estimate) |> 
+  pivot_wider(
+    names_from = term,
+    values_from = estimate) |> 
+  rename(
+    beta1 = tmin,
+    beta2 = prcp) |> 
+  mutate(
+    log_betas = log(beta1*beta2)
+  ) |> 
+  drop_na()
+
+#plot for log betas
+boot_results_beta |> 
+  ggplot(aes(x = log_betas)) +
+  geom_density() +
+  labs(
+    x = "log(beta1*beta2)",
+    y = "density",
+    title = "Distribution of log of beta1*beta2")
+```
+
+
+Now, I calculate the 95% confidence interval for the log(beta1*beta2) and the r squared.
+```{r}
+#95% confidence interval for r square
+boot_results_r |> 
+#group_by() -- in class he used group_by -- do I need to use it, too?
+  summarize(
+    ci_lower_est = quantile(r_squared, 0.025),
+    ci_upper_est = quantile(r_squared, 0.0975)) |> 
+  knitr::kable(digits = 2)
+
+#95% confidence interval for log(beta1*beta2)
+boot_results_beta |> 
+#  group_by(term) -- in class he used group_by -- do I need to use it, too?
+  summarize(
+    ci_lower_est = quantile(log_betas, 0.025),
+    ci_upper_est = quantile(log_betas, 0.0975)) |> #is this 0.025 or 0.95 for upper estimate of CI
+  knitr::kable(digits = 2)
+```
+
 
 ### Problem 3
 
 ```{r}
-#how do I see if the variables are chr or num ?
 #data cleaning
 bw_data = 
-  read_csv("data/birthweight.csv")
+  read_csv("data/birthweight.csv") |> 
+  drop_na()
+  
+#propose a linear regression model
+# add another predictor (stepwise?)
+linear_mod = lm(bwt ~ . , data = bw_data) 
 
-#linear regression
-linear_mod = lm(bwt ~ delwt, data = bw_data)
+#applyimg the stepwise function
+stepwise = step(linear_mod, direction = "both")
 
-#adding predictions
+#adding predictions (how do I plot it against fitted)
 bw_data  |> 
   modelr::add_predictions(linear_mod) |> 
   ggplot(aes(x = delwt, y = bwt)) + 
   geom_point() + 
   geom_line(aes(y = pred))
 
-#adding residuals
+#adding residuals (how do I plot it against fitted)
 bw_data |> 
   modelr::add_residuals(linear_mod) |> 
   ggplot(aes(x = delwt, y = bwt)) + 
@@ -122,6 +177,27 @@ model_two = lm(bwt ~ bhead + blength + babysex + bhead*blength + bhead*babysex +
 
 Cross Validation 
 ```{r}
+cv_df = 
+  bw_data |> 
+  crossv_mc(n = 100) |> 
+  mutate(
+    train = map(train, as_tibble),
+    test = map(test, as_tibble)
+  )
 
+#how do I choose the x and ys for the model???
+cv_results =
+  cv_df 
+#|> 
+#  mutate(
+#    linear_mod = map(train, \(df) lm(bwt ~ x, data = df)),
+#    model_one = map(train, \(df) lm(bwt ~ x, data = df)),
+#    model_twot = map(train, \(df) lm(bwt ~ x, data = df))
+#  ) |> 
+#  mutate(
+#    rmse_linear = map2_dbl(linear_mod, test, \(mod, df) rmse(mod, df)),
+#    rmse_model_one = map2_dbl(model_one, test, \(mod, df) rmse(mod, df)),
+#    rmse_model_two = map2_dbl(model_two, test, \(mod, df) rmse(mod, df))
+#  )
 ```
 
